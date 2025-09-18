@@ -23,6 +23,13 @@ export class ConversationRepository {
         FOREIGN KEY (contactId) REFERENCES contacts (id) ON DELETE CASCADE
       );
     `);
+    
+    // Add missing columns if they don't exist (for existing databases)
+    try {
+      this.db.execSync(`ALTER TABLE conversations ADD COLUMN tags TEXT;`);
+    } catch (error) {
+      // Column already exists, ignore error
+    }
   }
 
   async createConversation(data: ConversationCreateData): Promise<Conversation> {
@@ -113,6 +120,37 @@ export class ConversationRepository {
       createdAt: new Date(result.createdAt),
       updatedAt: new Date(result.updatedAt)
     };
+  }
+
+  async updateConversation(id: string, updates: Partial<Conversation>): Promise<Conversation | null> {
+    const now = new Date().toISOString();
+    const tagsJson = updates.tags ? JSON.stringify(updates.tags) : null;
+    
+    const result = this.db.runSync(
+      `UPDATE conversations 
+       SET transcription = COALESCE(?, transcription),
+           summary = COALESCE(?, summary),
+           tags = COALESCE(?, tags),
+           audioFilePath = COALESCE(?, audioFilePath),
+           duration = COALESCE(?, duration),
+           updatedAt = ?
+       WHERE id = ?`,
+      [
+        updates.transcription || null,
+        updates.summary || null,
+        tagsJson,
+        updates.audioFilePath || null,
+        updates.duration || null,
+        now,
+        id
+      ]
+    );
+
+    if (result.changes > 0) {
+      return this.getConversation(id);
+    } else {
+      return null;
+    }
   }
 
   async deleteConversation(id: string): Promise<boolean> {

@@ -4,6 +4,8 @@ export interface Contact {
   phone?: string;
   email?: string;
   notes?: string;
+  imageUri?: string;
+  tags?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,6 +21,8 @@ export interface ContactCreateData {
   phone?: string;
   email?: string;
   notes?: string;
+  imageUri?: string;
+  tags?: string[];
 }
 
 export interface ContactUpdateData {
@@ -26,6 +30,8 @@ export interface ContactUpdateData {
   phone?: string;
   email?: string;
   notes?: string;
+  imageUri?: string;
+  tags?: string[];
 }
 
 // Stage 2 types

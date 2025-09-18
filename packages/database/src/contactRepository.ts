@@ -16,20 +16,36 @@ export class ContactRepository {
         phone TEXT,
         email TEXT,
         notes TEXT,
+        imageUri TEXT,
+        tags TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
     `);
+    
+    // Add missing columns if they don't exist (for existing databases)
+    try {
+      this.db.execSync(`ALTER TABLE contacts ADD COLUMN imageUri TEXT;`);
+    } catch (error) {
+      // Column already exists, ignore error
+    }
+    
+    try {
+      this.db.execSync(`ALTER TABLE contacts ADD COLUMN tags TEXT;`);
+    } catch (error) {
+      // Column already exists, ignore error
+    }
   }
 
   async createContact(data: ContactCreateData): Promise<Contact> {
     const id = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date().toISOString();
+    const tagsJson = data.tags ? JSON.stringify(data.tags) : null;
     
     this.db.runSync(
-      `INSERT INTO contacts (id, name, phone, email, notes, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.name, data.phone || null, data.email || null, data.notes || null, now, now]
+      `INSERT INTO contacts (id, name, phone, email, notes, imageUri, tags, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, data.name, data.phone || null, data.email || null, data.notes || null, data.imageUri || null, tagsJson, now, now]
     );
 
     const contact: Contact = {
@@ -38,6 +54,8 @@ export class ContactRepository {
       phone: data.phone,
       email: data.email,
       notes: data.notes,
+      imageUri: data.imageUri,
+      tags: data.tags,
       createdAt: new Date(now),
       updatedAt: new Date(now)
     };
@@ -58,6 +76,8 @@ export class ContactRepository {
       phone: result.phone,
       email: result.email,
       notes: result.notes,
+      imageUri: result.imageUri,
+      tags: result.tags ? JSON.parse(result.tags) : [],
       createdAt: new Date(result.createdAt),
       updatedAt: new Date(result.updatedAt)
     };
@@ -72,6 +92,8 @@ export class ContactRepository {
       phone: row.phone,
       email: row.email,
       notes: row.notes,
+      imageUri: row.imageUri,
+      tags: row.tags ? JSON.parse(row.tags) : [],
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt)
     }));
@@ -79,6 +101,7 @@ export class ContactRepository {
 
   async updateContact(id: string, data: ContactUpdateData): Promise<Contact | null> {
     const now = new Date().toISOString();
+    const tagsJson = data.tags ? JSON.stringify(data.tags) : null;
     
     const result = this.db.runSync(
       `UPDATE contacts 
@@ -86,9 +109,11 @@ export class ContactRepository {
            phone = COALESCE(?, phone),
            email = COALESCE(?, email),
            notes = COALESCE(?, notes),
+           imageUri = COALESCE(?, imageUri),
+           tags = COALESCE(?, tags),
            updatedAt = ?
        WHERE id = ?`,
-      [data.name || null, data.phone || null, data.email || null, data.notes || null, now, id]
+      [data.name || null, data.phone || null, data.email || null, data.notes || null, data.imageUri || null, tagsJson, now, id]
     );
 
     if (result.changes > 0) {
