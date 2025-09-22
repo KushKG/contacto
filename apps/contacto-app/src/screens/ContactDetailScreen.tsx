@@ -18,6 +18,7 @@ import { RouteProp } from '@react-navigation/native';
 import { Contact, Conversation } from '@contacto/shared';
 import { getContactService } from '../services/contactService';
 import { getConversationService } from '../services/conversationService';
+import { getHybridSearchService } from '../services/hybridSearchService';
 
 type RootStackParamList = {
   ContactsList: undefined;
@@ -53,6 +54,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingAnimation] = useState(new Animated.Value(1));
+  const [visualizerAnimation] = useState(new Animated.Value(0));
 
   const contactService = getContactService();
   const conversationService = getConversationService();
@@ -88,10 +90,12 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
     }
   }, [contactService, conversationService, contactId]);
 
-  const handleDeleteContact = useCallback(() => {
+  // Delete contact functionality removed
+
+  const handleDeleteConversation = useCallback(async (conversationId: string) => {
     Alert.alert(
-      'Delete Contact',
-      `Are you sure you want to delete ${contact?.name}?`,
+      'Delete Conversation',
+      'Are you sure you want to delete this conversation? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -99,18 +103,24 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await contactService.deleteContact(contactId);
-              Alert.alert('Success', 'Contact deleted successfully');
-              navigation.goBack();
+              await conversationService.deleteConversation(conversationId);
+              
+              // Remove from local state
+              setConversations(prev => prev.filter(conv => conv.id !== conversationId));
+              
+              // Reload contact to update conversation count
+              await loadContact();
+              
+              Alert.alert('Success', 'Conversation deleted successfully');
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete contact');
-              console.error('Error deleting contact:', error);
+              Alert.alert('Error', 'Failed to delete conversation');
+              console.error('Error deleting conversation:', error);
             }
           },
         },
       ]
     );
-  }, [contactService, contactId, contact?.name, navigation]);
+  }, [conversationService, loadContact]);
 
   const handlePlayConversation = async (conversation: Conversation) => {
     try {
@@ -174,29 +184,47 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
   };
 
   const startRecordingAnimation = () => {
+    // Button pulse animation
     Animated.loop(
       Animated.sequence([
         Animated.timing(recordingAnimation, {
-          toValue: 1.2,
-          duration: 800,
+          toValue: 1.15,
+          duration: 1000,
           useNativeDriver: true,
         }),
         Animated.timing(recordingAnimation, {
           toValue: 1,
-          duration: 800,
+          duration: 1000,
           useNativeDriver: true,
         }),
       ])
     ).start();
+
+    // Visualizer animation - smooth fade in
+    Animated.timing(visualizerAnimation, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
   };
 
   const stopRecordingAnimation = () => {
     recordingAnimation.stopAnimation();
-    Animated.timing(recordingAnimation, {
-      toValue: 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
+    visualizerAnimation.stopAnimation();
+    
+    // Smooth fade out
+    Animated.parallel([
+      Animated.timing(recordingAnimation, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(visualizerAnimation, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      })
+    ]).start();
   };
 
   const handleRecordConversation = async () => {
@@ -255,6 +283,15 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
         setContact(updatedContact);
         // Also update the conversation tags list to include this new tag
         setAllConversationTags(prev => [...prev, newTag.trim()]);
+        
+        // Update hybrid search service separately (with error handling)
+        try {
+          const hybridSearchService = getHybridSearchService();
+          await hybridSearchService.updateContact(contactId, { tags: updatedTags });
+        } catch (searchError) {
+          console.warn('Failed to update search index, but tag was added:', searchError);
+          // Don't show error to user - tag was successfully added
+        }
       }
       
       setNewTag('');
@@ -275,6 +312,15 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
       
       if (updatedContact) {
         setContact(updatedContact);
+        
+        // Update hybrid search service separately (with error handling)
+        try {
+          const hybridSearchService = getHybridSearchService();
+          await hybridSearchService.updateContact(contactId, { tags: updatedContactTags });
+        } catch (searchError) {
+          console.warn('Failed to update search index, but tag was deleted:', searchError);
+          // Don't show error to user - tag was successfully deleted
+        }
       }
       
       // Also remove from conversation tags list
@@ -293,7 +339,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
         })
       );
       
-      setConversations(updatedConversations);
+      setConversations(updatedConversations.filter((conv): conv is Conversation => conv !== null));
     } catch (error) {
       console.error('Error deleting tag:', error);
       Alert.alert('Error', 'Failed to delete tag');
@@ -395,7 +441,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
           <Text style={styles.detailLabel}>tags</Text>
           <View style={styles.tagsContainer}>
             {(showAllTags ? allConversationTags : allConversationTags.slice(0, 4)).map((tag, index) => (
-              <View key={index} style={styles.tagSmall}>
+              <View key={`contact-tag-${tag}-${index}`} style={styles.tagSmall}>
                 <Text style={styles.tagTextSmall}>{tag}</Text>
                 <TouchableOpacity
                   style={styles.tagDeleteButton}
@@ -439,34 +485,96 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
         )}
       </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <Animated.View style={{ transform: [{ scale: recordingAnimation }] }}>
-            <TouchableOpacity
-              style={[styles.iconButton, isRecording && styles.recordingButton]}
-              onPress={handleRecordConversation}
+        {/* Voice Memo Recorder */}
+        <View style={styles.voiceMemoContainer}>
+          <View style={styles.voiceMemoHeader}>
+            <Text style={styles.voiceMemoTitle}>Record Conversation</Text>
+            <Animated.View style={{ opacity: isRecording ? 1 : 0 }}>
+              <View style={styles.recordingIndicator}>
+                <Animated.View style={[styles.recordingDot, { opacity: recordingAnimation }]} />
+                <Text style={styles.recordingText}>Recording...</Text>
+              </View>
+            </Animated.View>
+          </View>
+          
+          <View style={styles.recorderContainer}>
+            {/* Audio Visualizer */}
+            <Animated.View 
+              style={[
+                styles.visualizerContainer,
+                { 
+                  opacity: isRecording ? 1 : 0,
+                  transform: [{ scaleY: isRecording ? 1 : 0 }]
+                }
+              ]}
             >
-              <Text style={styles.iconButtonText}>
-                {isRecording ? '⏹️' : '🎤'}
+              {[...Array(5)].map((_, index) => (
+                <Animated.View
+                  key={`visualizer-bar-${index}`}
+                  style={[
+                    styles.visualizerBar,
+                    {
+                      transform: [
+                        { scaleY: visualizerAnimation },
+                        { 
+                          translateY: visualizerAnimation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, Math.sin(Date.now() / 200 + index * 0.5) * 8]
+                          })
+                        }
+                      ],
+                    }
+                  ]}
+                />
+              ))}
+            </Animated.View>
+            
+            {/* Record Button */}
+            <Animated.View style={{ transform: [{ scale: recordingAnimation }] }}>
+              <TouchableOpacity
+                style={[styles.recordButton, isRecording && styles.recordButtonActive]}
+                onPress={handleRecordConversation}
+              >
+                <View style={styles.recordButtonInner}>
+                  {isRecording ? (
+                    <View style={styles.stopIcon} />
+                  ) : (
+                    <View style={styles.recordIcon} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
+            
+            {/* Duration Display */}
+            <Animated.View 
+              style={[
+                styles.durationContainer,
+                { 
+                  opacity: isRecording ? 1 : 0,
+                  transform: [{ scale: isRecording ? 1 : 0.8 }]
+                }
+              ]}
+            >
+              <Text style={styles.durationText}>
+                {formatTime(recordingDuration * 1000)}
               </Text>
-              <Text style={styles.iconButtonLabel}>
-                {isRecording ? 'Stop' : 'Record'}
-              </Text>
-              {isRecording && (
-                <Text style={styles.recordingDuration}>
-                  {formatTime(recordingDuration * 1000)}
-                </Text>
-              )}
-            </TouchableOpacity>
+            </Animated.View>
+          </View>
+          
+          {/* Instructions */}
+          <Animated.View style={{ opacity: isRecording ? 0 : 1 }}>
+            <Text style={styles.recordInstructions}>
+              Tap to start recording a conversation
+            </Text>
           </Animated.View>
         </View>
 
       {/* Conversation History Header */}
-      <View style={styles.conversationsSection}>
-        <Text style={styles.sectionTitle}>
-          💬 Conversation History
-        </Text>
-      </View>
+        <View style={styles.conversationsSection}>
+          <Text style={styles.sectionTitle}>
+            Conversation History
+          </Text>
+        </View>
     </View>
   );
 
@@ -482,14 +590,22 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
         })}
       >
         <View style={styles.conversationHeader}>
-          <Text style={styles.conversationTimestamp}>
-            {formatTimestamp(item.createdAt)}
-          </Text>
-          {item.duration && (
-            <Text style={styles.conversationDuration}>
-              {formatTime(item.duration * 1000)}
+          <View style={styles.conversationHeaderLeft}>
+            <Text style={styles.conversationTimestamp}>
+              {formatTimestamp(item.createdAt)}
             </Text>
-          )}
+            {item.duration && (
+              <Text style={styles.conversationDuration}>
+                {formatTime(item.duration * 1000)}
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity
+            style={styles.deleteConversationButton}
+            onPress={() => handleDeleteConversation(item.id)}
+          >
+            <Text style={styles.deleteConversationText}>🗑️</Text>
+          </TouchableOpacity>
         </View>
         
         <Text style={styles.conversationSummary} numberOfLines={2}>
@@ -499,14 +615,14 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
         {/* Playback Controls */}
         {item.audioFilePath && (
           <View style={styles.playbackContainer}>
-            <TouchableOpacity
-              style={styles.playButton}
-              onPress={() => handlePlayConversation(item)}
-            >
-              <Text style={styles.playButtonText}>
-                {isPlaying ? '⏸️' : '▶️'}
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.playButton}
+                onPress={() => handlePlayConversation(item)}
+              >
+                <Text style={styles.playButtonText}>
+                  {isPlaying ? '⏸' : '▶'}
+                </Text>
+              </TouchableOpacity>
             
             {isPlaying && (
               <View style={styles.playbackBar}>
@@ -529,7 +645,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
         {item.tags.length > 0 && (
           <View style={styles.conversationTags}>
             {item.tags.slice(0, 3).map((tag, index) => (
-              <View key={index} style={styles.conversationTag}>
+              <View key={`conversation-tag-${item.id}-${tag}-${index}`} style={styles.conversationTag}>
                 <Text style={styles.conversationTagText}>{tag}</Text>
               </View>
             ))}
@@ -764,9 +880,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#007AFF',
-    borderStyle: 'dashed',
     marginBottom: 8,
   },
   addTagText: {
@@ -809,9 +922,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#007AFF',
-    borderStyle: 'dashed',
     marginBottom: 6,
     width: 24,
     height: 24,
@@ -850,41 +960,123 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   
-  // Icon buttons styles
-  actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20,
-    paddingHorizontal: 20,
+  // Voice Memo Recorder
+  voiceMemoContainer: {
     backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginVertical: 16,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  voiceMemoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  voiceMemoTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  recordingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ff3b30',
+    marginRight: 8,
+  },
+  recordingText: {
+    fontSize: 14,
+    color: '#ff3b30',
+    fontWeight: '500',
+  },
+  recorderContainer: {
+    alignItems: 'center',
     paddingVertical: 20,
   },
-  iconButton: {
+  visualizerContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    height: 40,
+  },
+  visualizerBar: {
+    width: 4,
+    height: 20,
+    backgroundColor: '#007AFF',
+    borderRadius: 2,
+    marginHorizontal: 2,
+  },
+  recordButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#f2f2f7',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    minWidth: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  iconButtonText: {
-    fontSize: 24,
-    marginBottom: 8,
-  },
-  iconButtonLabel: {
-    fontSize: 12,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  recordingButton: {
+  recordButtonActive: {
     backgroundColor: '#ff3b30',
-    borderColor: '#ff3b30',
   },
-  recordingDuration: {
-    fontSize: 10,
-    color: '#fff',
-    fontWeight: '500',
-    marginTop: 2,
+  recordButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recordIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ff3b30',
+  },
+  stopIcon: {
+    width: 20,
+    height: 20,
+    backgroundColor: '#ff3b30',
+    borderRadius: 4,
+  },
+  durationContainer: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f2f2f7',
+    borderRadius: 20,
+  },
+  durationText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000',
+  },
+  recordInstructions: {
+    fontSize: 14,
+    color: '#8e8e93',
+    textAlign: 'center',
+    marginTop: 12,
   },
   conversationsSection: {
     marginTop: 20,
@@ -901,9 +1093,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 24,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderStyle: 'dashed',
   },
   noConversationsText: {
     fontSize: 16,
@@ -928,6 +1117,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  conversationHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  deleteConversationButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: '#ff3b30',
+    marginLeft: 12,
+  },
+  deleteConversationText: {
+    fontSize: 16,
+    color: '#fff',
   },
   conversationTimestamp: {
     fontSize: 15,
@@ -1024,8 +1228,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tagInput: {
-    borderWidth: 1,
-    borderColor: '#e5e5ea',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,

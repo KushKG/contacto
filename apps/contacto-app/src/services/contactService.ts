@@ -76,6 +76,10 @@ export class ContactService {
     }
     return this.db.contacts.searchContacts({ query });
   }
+
+  async clearAllTags(): Promise<void> {
+    return this.db.contacts.clearAllTags();
+  }
 }
 
 // Singleton instance

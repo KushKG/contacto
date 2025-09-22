@@ -178,4 +178,12 @@ export class ConversationRepository {
       updatedAt: new Date(row.updatedAt)
     }));
   }
+
+  async clearAllTags(): Promise<void> {
+    const now = new Date().toISOString();
+    this.db.runSync(
+      `UPDATE conversations SET tags = '[]', updatedAt = ?`,
+      [now]
+    );
+  }
 }

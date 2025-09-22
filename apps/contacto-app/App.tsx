@@ -6,26 +6,33 @@ import { StyleSheet, View, Text, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { getDatabase } from '@contacto/database';
+import { getHybridSearchService } from './src/services/hybridSearchService';
 import ContactsListScreen from './src/screens/ContactsListScreen';
 import ContactDetailScreen from './src/screens/ContactDetailScreen';
-import AddContactScreen from './src/screens/AddContactScreen';
 import EditContactScreen from './src/screens/EditContactScreen';
 import RecordConversationScreen from './src/screens/RecordConversationScreen';
 import ConversationDetailScreen from './src/screens/ConversationDetailScreen';
 import SemanticSearchScreen from './src/screens/SemanticSearchScreen';
-import SettingsScreen from './src/screens/SettingsScreen';
+import DebugDBScreen from './src/screens/DebugDBScreen';
 
 const Stack = createStackNavigator();
+
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
         const db = getDatabase();
         await db.initialize();
+        
+        // Initialize hybrid search service
+        const hybridSearchService = getHybridSearchService();
+        await hybridSearchService.initialize();
+        
         setIsLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to initialize app');
@@ -83,11 +90,7 @@ export default function App() {
             component={ContactDetailScreen}
             options={{ title: 'Contact Details' }}
           />
-          <Stack.Screen 
-            name="AddContact" 
-            component={AddContactScreen}
-            options={{ title: 'Add Contact' }}
-          />
+          {/* AddContact screen removed */}
           <Stack.Screen 
             name="EditContact" 
             component={EditContactScreen}
@@ -109,9 +112,9 @@ export default function App() {
             options={{ title: 'Semantic Search' }}
           />
           <Stack.Screen 
-            name="Settings" 
-            component={SettingsScreen}
-            options={{ title: 'Settings' }}
+            name="DebugDB" 
+            component={DebugDBScreen}
+            options={{ title: 'Debug DB' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

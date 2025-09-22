@@ -188,9 +188,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   searchInput: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    backgroundColor: '#f2f2f7',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -228,8 +226,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
   },
   resultHeader: {
     flexDirection: 'row',

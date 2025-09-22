@@ -131,12 +131,30 @@ export class ContactRepository {
   async searchContacts(params: ContactSearchParams): Promise<Contact[]> {
     const { query, limit = 50, offset = 0 } = params;
     
+    // Stage 1: Enhanced keyword search across all fields including tags
     const results = this.db.getAllSync(
       `SELECT * FROM contacts 
-       WHERE name LIKE ? OR phone LIKE ? OR email LIKE ? OR notes LIKE ?
-       ORDER BY name ASC
+       WHERE name LIKE ? 
+          OR phone LIKE ? 
+          OR email LIKE ? 
+          OR notes LIKE ?
+          OR tags LIKE ?
+       ORDER BY 
+         CASE 
+           WHEN name LIKE ? THEN 1
+           WHEN phone LIKE ? THEN 2
+           WHEN email LIKE ? THEN 3
+           WHEN tags LIKE ? THEN 4
+           WHEN notes LIKE ? THEN 5
+           ELSE 6
+         END,
+         name ASC
        LIMIT ? OFFSET ?`,
-      [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, limit, offset]
+      [
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, // WHERE clause
+        `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, // ORDER BY clause
+        limit, offset
+      ]
     );
 
     return results.map((row: any) => ({
@@ -145,8 +163,59 @@ export class ContactRepository {
       phone: row.phone,
       email: row.email,
       notes: row.notes,
+      imageUri: row.imageUri,
+      tags: row.tags ? JSON.parse(row.tags) : [],
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt)
     }));
+  }
+
+  async searchContactsByTag(tag: string): Promise<Contact[]> {
+    const results = this.db.getAllSync(
+      `SELECT * FROM contacts 
+       WHERE tags LIKE ?
+       ORDER BY name ASC`,
+      [`%"${tag}"%`]
+    );
+
+    return results.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      notes: row.notes,
+      imageUri: row.imageUri,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt)
+    }));
+  }
+
+  async getContactsWithTags(): Promise<Contact[]> {
+    const results = this.db.getAllSync(
+      `SELECT * FROM contacts 
+       WHERE tags IS NOT NULL AND tags != '[]'
+       ORDER BY name ASC`
+    );
+
+    return results.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      notes: row.notes,
+      imageUri: row.imageUri,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt)
+    }));
+  }
+
+  async clearAllTags(): Promise<void> {
+    const now = new Date().toISOString();
+    this.db.runSync(
+      `UPDATE contacts SET tags = NULL, updatedAt = ?`,
+      [now]
+    );
   }
 }

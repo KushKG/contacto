@@ -8,6 +8,7 @@ import {
 } from '@contacto/shared';
 import { getAIService } from './aiService';
 import { getAudioService } from './audioService';
+import { getHybridSearchService } from './hybridSearchService';
 
 export class ConversationService {
   private db = getDatabase();
@@ -60,6 +61,21 @@ export class ConversationService {
       };
 
       const conversation = await this.db.conversations.createConversation(conversationData);
+
+      // Persist extracted tags onto the contact (union)
+      const existingTags = contact?.tags || [];
+      const tagSet = new Set<string>([...existingTags, ...tags]);
+      const mergedTags = Array.from(tagSet);
+      const updatedContact = await this.db.contacts.updateContact(contactId, { tags: mergedTags });
+
+      // Rebuild tags-only semantic index so AI search immediately reflects changes
+      try {
+        const hybrid = getHybridSearchService();
+        await hybrid.updateContact(contactId, { tags: mergedTags });
+        await hybrid.rebuildTagIndex();
+      } catch (idxErr) {
+        console.warn('Warning: failed to rebuild tag index after conversation:', idxErr);
+      }
       
       return conversation;
     } catch (error) {
@@ -86,10 +102,37 @@ export class ConversationService {
 
   async deleteConversation(id: string): Promise<boolean> {
     const conversation = await this.getConversation(id);
-    if (conversation?.audioFilePath) {
+    if (!conversation) {
+      return false;
+    }
+
+    // Delete audio file if present
+    if (conversation.audioFilePath) {
       await this.audioService.deleteAudioFile(conversation.audioFilePath);
     }
-    return this.db.conversations.deleteConversation(id);
+
+    // Delete the conversation row
+    const deleted = await this.db.conversations.deleteConversation(id);
+
+    // Recompute contact tags from remaining conversations (tags-only semantic index)
+    try {
+      const remaining = await this.getConversationsByContact(conversation.contactId);
+      const unionTags = Array.from(
+        new Set(
+          remaining.flatMap(c => c.tags || [])
+        )
+      );
+      await this.db.contacts.updateContact(conversation.contactId, { tags: unionTags });
+
+      // Update hybrid index
+      const hybrid = getHybridSearchService();
+      await hybrid.updateContact(conversation.contactId, { tags: unionTags });
+      await hybrid.rebuildTagIndex();
+    } catch (recalcErr) {
+      console.warn('Warning: failed to recompute tags after deletion:', recalcErr);
+    }
+
+    return deleted;
   }
 
   async searchConversations(query: string): Promise<Conversation[]> {
@@ -132,6 +175,88 @@ export class ConversationService {
     } catch (error) {
       console.error('Error getting contact suggestions:', error);
       return [];
+    }
+  }
+
+  // Stage 2: Enhanced semantic search with contact embeddings
+  async hybridSearch(query: string): Promise<Contact[]> {
+    try {
+      const aiService = getAIService();
+      
+      // Get all contacts with their conversation data for embedding
+      const contacts = await this.db.contacts.getAllContacts();
+      const conversations = await this.getAllConversations();
+      
+      // Build enriched contact data for semantic search
+      const enrichedContacts = await Promise.all(
+        contacts.map(async (contact) => {
+          const contactConversations = conversations.filter(conv => conv.contactId === contact.id);
+          
+          // Concatenate contact info + tags + conversation summaries for embedding
+          const contactText = [
+            contact.name,
+            ...(contact.tags || []),
+            contact.notes || '',
+            ...contactConversations.map(conv => conv.summary),
+            ...contactConversations.slice(0, 3).map(conv => conv.transcription.substring(0, 500)) // Recent transcripts (truncated)
+          ].filter(Boolean).join(' ');
+          
+          return {
+            contact,
+            searchText: contactText,
+            conversationCount: contactConversations.length,
+            lastConversation: contactConversations.length > 0 
+              ? Math.max(...contactConversations.map(c => c.createdAt.getTime()))
+              : 0
+          };
+        })
+      );
+
+      // Perform semantic search on enriched contact data
+      const searchResults = await aiService.semanticSearchContacts(query, enrichedContacts);
+      
+      // Sort by relevance score and recency
+      return searchResults
+        .sort((a, b) => {
+          // Primary sort by similarity score
+          if (Math.abs(a.similarity - b.similarity) > 0.1) {
+            return b.similarity - a.similarity;
+          }
+          // Secondary sort by conversation activity
+          return b.conversationCount - a.conversationCount;
+        })
+        .slice(0, 20) // Limit results
+        .map(result => result.contact);
+        
+    } catch (error) {
+      console.error('Error in hybrid search:', error);
+      return [];
+    }
+  }
+
+  // Stage 3: Combined keyword + semantic search
+  async combinedSearch(query: string): Promise<Contact[]> {
+    try {
+      // Run both searches in parallel
+      const [keywordResults, semanticResults] = await Promise.all([
+        this.db.contacts.searchContacts({ query }),
+        this.hybridSearch(query)
+      ]);
+
+      // Merge results, prioritizing exact matches
+      const keywordIds = new Set(keywordResults.map(contact => contact.id));
+      const semanticUnique = semanticResults.filter(contact => !keywordIds.has(contact.id));
+      
+      // Combine: keyword matches first (exact), then semantic matches (similar)
+      const combinedResults = [...keywordResults, ...semanticUnique];
+      
+      // Limit total results
+      return combinedResults.slice(0, 50);
+      
+    } catch (error) {
+      console.error('Error in combined search:', error);
+      // Fallback to keyword search only
+      return this.db.contacts.searchContacts({ query });
     }
   }
 
@@ -187,6 +312,10 @@ export class ConversationService {
         mostActiveContact: null,
       };
     }
+  }
+
+  async clearAllTags(): Promise<void> {
+    return this.db.conversations.clearAllTags();
   }
 }
 

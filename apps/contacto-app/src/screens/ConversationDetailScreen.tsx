@@ -161,7 +161,7 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
               disabled={isPlaying}
             >
               <Text style={styles.playButtonText}>
-                {isPlaying ? 'Playing...' : '▶️ Play Audio'}
+                {isPlaying ? 'Playing...' : '▶ Play Audio'}
               </Text>
             </TouchableOpacity>
             <Text style={styles.duration}>
@@ -180,7 +180,7 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
             <Text style={styles.sectionTitle}>Tags</Text>
             <View style={styles.tagsContainer}>
               {conversation.tags.map((tag, index) => (
-                <View key={index} style={styles.tag}>
+                <View key={`conversation-detail-tag-${tag}-${index}`} style={styles.tag}>
                   <Text style={styles.tagText}>{tag}</Text>
                 </View>
               ))}

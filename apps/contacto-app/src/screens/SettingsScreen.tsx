@@ -122,6 +122,36 @@ export default function SettingsScreen({ navigation }: Props) {
     );
   };
 
+  const handleClearAllTags = () => {
+    Alert.alert(
+      'Clear All Tags',
+      'This will remove all tags from contacts and conversations. This action cannot be undone. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All Tags',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const contactService = getContactService();
+              const conversationService = getConversationService();
+              
+              await Promise.all([
+                contactService.clearAllTags(),
+                conversationService.clearAllTags()
+              ]);
+              
+              Alert.alert('Success', 'All tags have been cleared successfully');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to clear tags');
+              console.error('Error clearing tags:', error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const maskApiKey = (key: string): string => {
     if (key.length <= 8) return key;
     return key.substring(0, 8) + '•'.repeat(key.length - 8);
@@ -226,13 +256,14 @@ export default function SettingsScreen({ navigation }: Props) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>AI Features Overview</Text>
           <View style={styles.featuresList}>
-            <Text style={styles.featureItem}>🎤 Audio Transcription (Whisper)</Text>
-            <Text style={styles.featureItem}>📝 Conversation Summaries</Text>
-            <Text style={styles.featureItem}>🏷️ Automatic Contact Tagging</Text>
-            <Text style={styles.featureItem}>🔍 Semantic Search</Text>
-            <Text style={styles.featureItem}>📊 Sentiment Analysis</Text>
+            <Text style={styles.featureItem}>● Audio Transcription (Whisper)</Text>
+            <Text style={styles.featureItem}>• Conversation Summaries</Text>
+            <Text style={styles.featureItem}>• Automatic Contact Tagging</Text>
+            <Text style={styles.featureItem}>• Semantic Search</Text>
+            <Text style={styles.featureItem}>• Sentiment Analysis</Text>
           </View>
         </View>
+
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Privacy & Security</Text>

@@ -230,6 +230,82 @@ Please respond in JSON format:
     }
   }
 
+  // Stage 2: Enhanced semantic search for contacts
+  async semanticSearchContacts(
+    query: string,
+    enrichedContacts: Array<{
+      contact: any;
+      searchText: string;
+      conversationCount: number;
+      lastConversation: number;
+    }>
+  ): Promise<Array<{
+    contact: any;
+    similarity: number;
+    conversationCount: number;
+  }>> {
+    try {
+      // Generate embedding for the search query
+      const queryEmbedding = await this.generateEmbedding(query);
+      
+      // Generate embeddings for all contact search texts
+      const contactEmbeddings = await Promise.all(
+        enrichedContacts.map(async (enrichedContact) => {
+          const embedding = await this.generateEmbedding(enrichedContact.searchText);
+          return {
+            ...enrichedContact,
+            embedding,
+          };
+        })
+      );
+
+      // Calculate cosine similarity for each contact
+      const results = contactEmbeddings.map((enrichedContact) => {
+        const similarity = this.cosineSimilarity(queryEmbedding, enrichedContact.embedding);
+        return {
+          contact: enrichedContact.contact,
+          similarity,
+          conversationCount: enrichedContact.conversationCount,
+        };
+      });
+
+      // Filter by relevance threshold and sort
+      return results
+        .filter(result => result.similarity > 0.6) // Lower threshold for contact search
+        .sort((a, b) => {
+          // Primary sort: similarity score
+          if (Math.abs(a.similarity - b.similarity) > 0.1) {
+            return b.similarity - a.similarity;
+          }
+          // Secondary sort: conversation activity
+          return b.conversationCount - a.conversationCount;
+        });
+        
+    } catch (error) {
+      console.error('Error in semantic contact search:', error);
+      return [];
+    }
+  }
+
+  // Enhanced embedding generation with caching for better performance
+  private embeddingCache = new Map<string, number[]>();
+  
+  async generateEmbeddingCached(text: string): Promise<number[]> {
+    // Use cached embedding if available
+    if (this.embeddingCache.has(text)) {
+      return this.embeddingCache.get(text)!;
+    }
+    
+    const embedding = await this.generateEmbedding(text);
+    
+    // Cache the result (with size limit to prevent memory issues)
+    if (this.embeddingCache.size < 1000) {
+      this.embeddingCache.set(text, embedding);
+    }
+    
+    return embedding;
+  }
+
   private cosineSimilarity(a: number[], b: number[]): number {
     if (a.length !== b.length) {
       throw new Error('Vectors must have the same length');

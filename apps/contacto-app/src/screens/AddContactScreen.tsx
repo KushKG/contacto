@@ -9,6 +9,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  Animated,
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
@@ -20,6 +22,9 @@ type RootStackParamList = {
   ContactDetail: { contactId: string };
   AddContact: undefined;
   EditContact: { contactId: string };
+  RecordConversation: { contactId: string };
+  ConversationDetail: { conversationId: string };
+  SemanticSearch: undefined;
 };
 
 type AddContactScreenNavigationProp = StackNavigationProp<RootStackParamList, 'AddContact'>;
@@ -38,8 +43,18 @@ export default function AddContactScreen({ navigation }: Props) {
     notes: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [slideAnim] = useState(new Animated.Value(0));
 
   const contactService = getContactService();
+
+  React.useEffect(() => {
+    // Animate modal slide up
+    Animated.timing(slideAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, []);
 
   const handleInputChange = (field: keyof ContactCreateData, value: string) => {
     setFormData(prev => ({
@@ -67,6 +82,16 @@ export default function AddContactScreen({ navigation }: Props) {
     return emailRegex.test(email);
   };
 
+  const handleClose = () => {
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.goBack();
+    });
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
@@ -80,12 +105,15 @@ export default function AddContactScreen({ navigation }: Props) {
       };
 
       const newContact = await contactService.createContact(contactData);
-      Alert.alert('Success', 'Contact created successfully!', [
-        {
-          text: 'OK',
-          onPress: () => navigation.navigate('ContactDetail', { contactId: newContact.id }),
-        },
-      ]);
+      
+      // Close modal and navigate to contact detail
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        navigation.navigate('ContactDetail', { contactId: newContact.id });
+      });
     } catch (error) {
       Alert.alert('Error', 'Failed to create contact');
       console.error('Error creating contact:', error);
@@ -94,91 +122,170 @@ export default function AddContactScreen({ navigation }: Props) {
     }
   };
 
+  const translateY = slideAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [600, 0],
+  });
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <Modal
+      visible={true}
+      transparent={true}
+      animationType="none"
+      onRequestClose={handleClose}
+      presentationStyle="overFullScreen"
     >
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.form}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Name *</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.name}
-              onChangeText={(value) => handleInputChange('name', value)}
-              placeholder="Enter contact name"
-              autoCapitalize="words"
-              autoCorrect={false}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.phone}
-              onChangeText={(value) => handleInputChange('phone', value)}
-              placeholder="Enter phone number"
-              keyboardType="phone-pad"
-              autoCorrect={false}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.email}
-              onChangeText={(value) => handleInputChange('email', value)}
-              placeholder="Enter email address"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Notes</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={formData.notes}
-              onChangeText={(value) => handleInputChange('notes', value)}
-              placeholder="Enter notes about this contact"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={styles.actions}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBackdrop} />
+        <Animated.View 
+          style={[
+            styles.modalContent,
+            { transform: [{ translateY }] }
+          ]}
+        >
+          {/* Header */}
+          <View style={styles.modalHeader}>
             <TouchableOpacity
               style={styles.cancelButton}
-              onPress={() => navigation.goBack()}
+              onPress={handleClose}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
-
+            <Text style={styles.modalTitle}>New Contact</Text>
             <TouchableOpacity
-              style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+              style={[styles.doneButton, isSubmitting && styles.doneButtonDisabled]}
               onPress={handleSubmit}
               disabled={isSubmitting}
             >
-              <Text style={styles.submitButtonText}>
-                {isSubmitting ? 'Creating...' : 'Create Contact'}
+              <Text style={styles.doneButtonText}>
+                {isSubmitting ? 'Creating...' : 'Done'}
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+          {/* Form */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.formContainer}
+          >
+            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+              <View style={styles.form}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Name *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.name}
+                    onChangeText={(value) => handleInputChange('name', value)}
+                    placeholder="Enter contact name"
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    autoFocus={true}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Phone</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.phone}
+                    onChangeText={(value) => handleInputChange('phone', value)}
+                    placeholder="Enter phone number"
+                    keyboardType="phone-pad"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.email}
+                    onChangeText={(value) => handleInputChange('email', value)}
+                    placeholder="Enter email address"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Notes</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    value={formData.notes}
+                    onChangeText={(value) => handleInputChange('notes', value)}
+                    placeholder="Enter notes about this contact"
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
+                </View>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  // Modal styles
+  modalOverlay: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    flex: 1,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    minHeight: '60%',
+  },
+  
+  // Header styles
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#e5e5ea',
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#000',
+  },
+  cancelButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  cancelButtonText: {
+    fontSize: 17,
+    color: '#007AFF',
+  },
+  doneButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  doneButtonDisabled: {
+    opacity: 0.5,
+  },
+  doneButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  
+  // Form styles
+  formContainer: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -190,57 +297,21 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 17,
+    fontWeight: '400',
+    color: '#000',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 16,
-    color: '#333',
+    fontSize: 17,
+    backgroundColor: '#f2f2f7',
+    color: '#000',
   },
   textArea: {
     height: 100,
     textAlignVertical: 'top',
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  submitButton: {
-    flex: 1,
-    backgroundColor: '#007AFF',
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#ccc',
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
 });

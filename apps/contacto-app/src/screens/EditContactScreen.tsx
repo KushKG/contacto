@@ -289,9 +289,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    backgroundColor: '#f2f2f7',
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -309,9 +307,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    backgroundColor: '#f2f2f7',
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',

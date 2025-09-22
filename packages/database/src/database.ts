@@ -16,6 +16,31 @@ export class Database {
   async initialize(): Promise<void> {
     await this.contacts.initialize();
     await this.conversations.initialize();
+    // No mock data; user will import on first run
+  }
+
+  async populateMockDataIfEmpty(): Promise<void> {
+    try {
+      // Deprecated in production; keeping for reference
+      // await this.clearAllData();
+      // ... add mock contacts here if needed for tests
+    } catch (error) {
+      console.error('❌ Error populating mock data:', error);
+    }
+  }
+
+  async clearAllData(): Promise<void> {
+    try {
+      // Clear all conversations
+      this.db.execSync('DELETE FROM conversations');
+      
+      // Clear all contacts
+      this.db.execSync('DELETE FROM contacts');
+      
+      console.log('✅ All data cleared successfully');
+    } catch (error) {
+      console.error('❌ Error clearing data:', error);
+    }
   }
 
   async close(): Promise<void> {
