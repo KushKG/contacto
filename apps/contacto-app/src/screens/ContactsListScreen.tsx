@@ -10,27 +10,29 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
+  Share,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Contact } from '@contacto/shared';
 import { getContactService } from '../services/contactService';
 import { getConversationService } from '../services/conversationService';
 import { getHybridSearchService } from '../services/hybridSearchService';
 
 type RootStackParamList = {
-  ContactsList: undefined;
+  MainTabs: undefined;
   ContactDetail: { contactId: string };
   EditContact: { contactId: string };
   RecordConversation: { contactId: string };
   ConversationDetail: { conversationId: string };
   SemanticSearch: undefined;
-  DebugDB: undefined; // Added DebugDB to the stack param list
+  DebugDB: undefined;
 };
 
-type ContactsListScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ContactsList'>;
-type ContactsListScreenRouteProp = RouteProp<RootStackParamList, 'ContactsList'>;
+type ContactsListScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
+type ContactsListScreenRouteProp = RouteProp<RootStackParamList, 'MainTabs'>;
 
 interface Props {
   navigation: ContactsListScreenNavigationProp;
@@ -51,6 +53,8 @@ export default function ContactsListScreen({ navigation }: Props) {
   const [simpleResults, setSimpleResults] = useState<Contact[]>([]);
   const [contactsImported, setContactsImported] = useState(false);
   const [aiDebug, setAiDebug] = useState<Array<{ contactId: string; semantic: number; keyword: number; final: number; matchedField?: string; snippet?: string }>>([]);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
 
   const contactService = getContactService();
   const conversationService = getConversationService();
@@ -193,24 +197,117 @@ export default function ContactsListScreen({ navigation }: Props) {
     loadContacts();
   }, [loadContacts]);
 
+  const formatContactsForSharing = useCallback((contacts: Contact[]) => {
+    if (contacts.length === 0) return 'No contacts found.';
+    
+    const contactList = contacts.map(contact => {
+      let contactInfo = `• ${contact.name}`;
+      if (contact.phone) contactInfo += `\n  Phone: ${contact.phone}`;
+      if (contact.email) contactInfo += `\n  Email: ${contact.email}`;
+      if (contact.tags && contact.tags.length > 0) {
+        contactInfo += `\n  Tags: ${contact.tags.join(', ')}`;
+      }
+      return contactInfo;
+    }).join('\n\n');
+
+    return `Found ${contacts.length} contact${contacts.length !== 1 ? 's' : ''}:\n\n${contactList}`;
+  }, []);
+
+  const handleShareContacts = useCallback(async () => {
+    const contactsToShare = mergedData;
+    
+    if (contactsToShare.length === 0) {
+      Alert.alert('No Contacts', 'No contacts to share. Try searching for contacts first.');
+      return;
+    }
+
+    const shareMessage = formatContactsForSharing(contactsToShare);
+    
+    try {
+      await Share.share({
+        message: shareMessage,
+        title: `Contact List (${contactsToShare.length} contacts)`,
+      });
+    } catch (error) {
+      console.error('Error sharing contacts:', error);
+      Alert.alert('Error', 'Failed to share contacts');
+    }
+  }, [mergedData, formatContactsForSharing]);
+
+  const handleToggleSelectMode = useCallback(() => {
+    setIsSelectMode(!isSelectMode);
+    if (isSelectMode) {
+      setSelectedContacts(new Set());
+    }
+  }, [isSelectMode]);
+
+  const handleToggleContactSelection = useCallback((contactId: string) => {
+    setSelectedContacts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(contactId)) {
+        newSet.delete(contactId);
+      } else {
+        newSet.add(contactId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleShareSelectedContacts = useCallback(async () => {
+    if (selectedContacts.size === 0) {
+      Alert.alert('No Selection', 'Please select contacts to share.');
+      return;
+    }
+
+    const contactsToShare = mergedData.filter(contact => selectedContacts.has(contact.id));
+    const shareMessage = formatContactsForSharing(contactsToShare);
+    
+    try {
+      await Share.share({
+        message: shareMessage,
+        title: `Selected Contacts (${contactsToShare.length} contacts)`,
+      });
+    } catch (error) {
+      console.error('Error sharing selected contacts:', error);
+      Alert.alert('Error', 'Failed to share selected contacts');
+    }
+  }, [selectedContacts, mergedData, formatContactsForSharing]);
+
   useEffect(() => {
     loadContacts();
   }, [loadContacts]);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
+  useFocusEffect(
+    useCallback(() => {
       loadContacts();
-    });
-    return unsubscribe;
-  }, [navigation, loadContacts]);
+    }, [loadContacts])
+  );
 
   const renderContactItem = ({ item }: { item: Contact }) => {
+    const isSelected = selectedContacts.has(item.id);
     
     return (
       <TouchableOpacity
-        style={styles.contactItem}
-        onPress={() => navigation.navigate('ContactDetail', { contactId: item.id })}
+        style={[styles.contactItem, isSelectMode && styles.contactItemSelectMode]}
+        onPress={() => {
+          if (isSelectMode) {
+            handleToggleContactSelection(item.id);
+          } else {
+            navigation.navigate('ContactDetail', { contactId: item.id });
+          }
+        }}
       >
+        {isSelectMode && (
+          <TouchableOpacity
+            style={styles.selectionCircle}
+            onPress={() => handleToggleContactSelection(item.id)}
+          >
+            <View style={[styles.circle, isSelected && styles.circleSelected]}>
+              {isSelected && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+          </TouchableOpacity>
+        )}
+        
         <View style={styles.contactAvatar}>
           {item.imageUri ? (
             <Image source={{ uri: item.imageUri }} style={styles.contactAvatarImage} />
@@ -223,13 +320,6 @@ export default function ContactsListScreen({ navigation }: Props) {
         <View style={styles.contactInfo}>
           <View style={styles.contactNameRow}>
             <Text style={styles.contactName}>{item.name || 'Unknown Contact'}</Text>
-            {item.tags && item.tags.length > 0 && (
-              <View style={styles.tagIndicator}>
-                <Text style={styles.tagIndicatorText}>
-                  {item.tags.length} tag{item.tags.length !== 1 ? 's' : ''}
-                </Text>
-              </View>
-            )}
           </View>
           {/* Phone and email hidden from main list */}
           {item.tags && item.tags.length > 0 && (
@@ -268,6 +358,11 @@ export default function ContactsListScreen({ navigation }: Props) {
           <TouchableOpacity onLongPress={() => navigation.navigate('DebugDB')}>
             <Text style={styles.headerTitle}>Contacts</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={handleToggleSelectMode}>
+            <Text style={styles.selectButtonText}>
+              {isSelectMode ? 'Cancel' : 'Select'}
+            </Text>
+          </TouchableOpacity>
         </View>
         
         {/* AI Search bar (conversations + tags embeddings, tag keywords) */}
@@ -275,7 +370,7 @@ export default function ContactsListScreen({ navigation }: Props) {
           <View style={styles.searchInputContainer}>
             <TextInput
               style={styles.searchInput}
-              placeholder="AI search: conversations, tags (semantic + keywords)"
+              placeholder="Search"
               placeholderTextColor="#8e8e93"
               value={aiQuery}
               onChangeText={handleAiSearchChange}
@@ -286,7 +381,7 @@ export default function ContactsListScreen({ navigation }: Props) {
         </View>
 
         {/* Simple Search bar (name, email, phone, tag keyword) */}
-        <View style={styles.searchContainer}>
+        {/* <View style={styles.searchContainer}>
           <View style={styles.searchInputContainer}>
             <TextInput
               style={styles.searchInput}
@@ -298,11 +393,12 @@ export default function ContactsListScreen({ navigation }: Props) {
               autoCorrect={false}
             />
           </View>
-        </View>
+        </View> */}
         
-        {/* Action buttons */}
-        <View style={styles.actionButtons}>
-          {!contactsImported && (
+
+        {/* Import button - only show when not imported */}
+        {!contactsImported && !isSelectMode && (
+          <View style={styles.actionButtons}>
             <TouchableOpacity
               style={[styles.actionButton, isImporting && styles.actionButtonDisabled]}
               onPress={handleImportContacts}
@@ -312,8 +408,8 @@ export default function ContactsListScreen({ navigation }: Props) {
                 {isImporting ? 'Importing...' : 'Import Contacts'}
               </Text>
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
+        )}
       </View>
 
       {/* Contacts list */}
@@ -375,6 +471,21 @@ export default function ContactsListScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       />
 
+      {/* Floating Share Button - appears above tab bar when in select mode */}
+      {isSelectMode && (
+        <View style={styles.floatingShareButton}>
+          <TouchableOpacity
+            style={[styles.shareButton, selectedContacts.size === 0 && styles.shareButtonDisabled]}
+            onPress={handleShareSelectedContacts}
+            disabled={selectedContacts.size === 0}
+          >
+            <Text style={styles.shareButtonText}>
+              Share ({selectedContacts.size})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
     </View>
   );
 }
@@ -397,7 +508,7 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#fff',
-    paddingTop: 44, // Status bar height
+    paddingTop: 60, // Increased to account for status bar + safe area
     paddingBottom: 16,
   },
   headerTop: {
@@ -424,6 +535,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: '#fff',
     fontWeight: '600',
+  },
+  selectButtonText: {
+    fontSize: 17,
+    color: '#007AFF',
+    fontWeight: '400',
   },
   searchContainer: {
     paddingHorizontal: 20,
@@ -458,16 +574,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   actionButtons: {
-    flexDirection: 'row',
     paddingHorizontal: 20,
-    gap: 12,
+    marginBottom: 12,
   },
   actionButton: {
     backgroundColor: '#007AFF',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderRadius: 8,
-    flex: 1,
+    alignItems: 'center',
   },
   actionButtonDisabled: {
     backgroundColor: '#8e8e93',
@@ -476,7 +591,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
   },
   contactItem: {
     backgroundColor: '#fff',
@@ -486,6 +600,31 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 0.5,
     borderBottomColor: '#e5e5ea',
+  },
+  contactItemSelectMode: {
+    paddingLeft: 12,
+  },
+  selectionCircle: {
+    marginRight: 8,
+    padding: 4,
+  },
+  circle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#c7c7cc',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  circleSelected: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   contactAvatar: {
     width: 40,
@@ -521,18 +660,6 @@ const styles = StyleSheet.create({
     color: '#000',
     flex: 1,
   },
-  tagIndicator: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  tagIndicatorText: {
-    fontSize: 10,
-    color: '#fff',
-    fontWeight: '600',
-  },
   contactDetail: {
     fontSize: 15,
     color: '#8e8e93',
@@ -540,8 +667,9 @@ const styles = StyleSheet.create({
   },
   tagsPreview: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     marginTop: 4,
+    overflow: 'hidden',
   },
   tagPreview: {
     backgroundColor: '#f2f2f7',
@@ -640,5 +768,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#8e8e93',
     fontStyle: 'italic',
+  },
+  
+  // Floating Share Button
+  floatingShareButton: {
+    position: 'relative',
+    bottom: 20, // Just above the tab bar
+    right: 20,
+    alignItems: 'flex-end',
+  },
+  shareButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 120,
+  },
+  shareButtonDisabled: {
+    backgroundColor: '#8e8e93',
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
   },
 });

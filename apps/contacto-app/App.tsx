@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View, Text, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import { getDatabase } from '@contacto/database';
 import { getHybridSearchService } from './src/services/hybridSearchService';
@@ -14,9 +16,74 @@ import RecordConversationScreen from './src/screens/RecordConversationScreen';
 import ConversationDetailScreen from './src/screens/ConversationDetailScreen';
 import SemanticSearchScreen from './src/screens/SemanticSearchScreen';
 import DebugDBScreen from './src/screens/DebugDBScreen';
+import CalendarSuggestionsScreen from './src/screens/CalendarSuggestionsScreen';
+import TeamModeScreen from './src/screens/TeamModeScreen';
+import ConnectionSuggestionsScreen from './src/screens/ConnectionSuggestionsScreen';
 
 const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator();
 
+function TabNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        tabBarStyle: {
+          backgroundColor: '#fff',
+          borderTopColor: '#e5e5ea',
+          borderTopWidth: 0.5,
+        },
+        tabBarActiveTintColor: '#007AFF',
+        tabBarInactiveTintColor: '#8e8e93',
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '500',
+        },
+        headerShown: false,
+      }}
+    >
+            <Tab.Screen 
+              name="Contacts" 
+              component={ContactsListScreen}
+              options={{
+                tabBarLabel: 'Contacts',
+                tabBarIcon: ({ color, size }) => (
+                  <MaterialIcons name="contacts" size={size} color={color} />
+                ),
+              }}
+            />
+            <Tab.Screen 
+              name="Calendar" 
+              component={CalendarSuggestionsScreen}
+              options={{
+                tabBarLabel: 'Calendar',
+                tabBarIcon: ({ color, size }) => (
+                  <MaterialIcons name="event" size={size} color={color} />
+                ),
+              }}
+            />
+            <Tab.Screen 
+              name="Connections" 
+              component={ConnectionSuggestionsScreen}
+              options={{
+                tabBarLabel: 'Connections',
+                tabBarIcon: ({ color, size }) => (
+                  <MaterialIcons name="link" size={size} color={color} />
+                ),
+              }}
+            />
+            <Tab.Screen 
+              name="Account" 
+              component={TeamModeScreen}
+              options={{
+                tabBarLabel: 'Account',
+                tabBarIcon: ({ color, size }) => (
+                  <MaterialIcons name="account-circle" size={size} color={color} />
+                ),
+              }}
+            />
+    </Tab.Navigator>
+  );
+}
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -69,7 +136,7 @@ export default function App() {
       <NavigationContainer>
         <StatusBar style="auto" />
         <Stack.Navigator
-          initialRouteName="ContactsList"
+          initialRouteName="MainTabs"
           screenOptions={{
             headerStyle: {
               backgroundColor: '#007AFF',
@@ -81,16 +148,15 @@ export default function App() {
           }}
         >
           <Stack.Screen 
-            name="ContactsList" 
-            component={ContactsListScreen}
-            options={{ title: 'Contacts' }}
+            name="MainTabs" 
+            component={TabNavigator}
+            options={{ headerShown: false }}
           />
           <Stack.Screen 
             name="ContactDetail" 
             component={ContactDetailScreen}
             options={{ title: 'Contact Details' }}
           />
-          {/* AddContact screen removed */}
           <Stack.Screen 
             name="EditContact" 
             component={EditContactScreen}

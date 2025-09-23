@@ -604,7 +604,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
             style={styles.deleteConversationButton}
             onPress={() => handleDeleteConversation(item.id)}
           >
-            <Text style={styles.deleteConversationText}>🗑️</Text>
+            <Text style={styles.deleteConversationText}>×</Text>
           </TouchableOpacity>
         </View>
         
@@ -1125,13 +1125,11 @@ const styles = StyleSheet.create({
   },
   deleteConversationButton: {
     padding: 8,
-    borderRadius: 6,
-    backgroundColor: '#ff3b30',
     marginLeft: 12,
   },
   deleteConversationText: {
     fontSize: 16,
-    color: '#fff',
+    color: '#ff3b30',
   },
   conversationTimestamp: {
     fontSize: 15,
@@ -1149,17 +1147,15 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   playButton: {
-    backgroundColor: '#007AFF',
     width: 32,
     height: 32,
-    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
   playButtonText: {
     fontSize: 16,
-    color: '#fff',
+    color: '#007AFF',
   },
   playbackBar: {
     flexDirection: 'row',

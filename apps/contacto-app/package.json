@@ -4,18 +4,21 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "dependencies": {
     "@contacto/database": "file:../../packages/database",
     "@contacto/shared": "file:../../packages/shared",
+    "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-navigation/bottom-tabs": "^7.4.7",
     "@react-navigation/native": "^7.1.17",
     "@react-navigation/stack": "^7.4.8",
     "expo": "~54.0.7",
     "expo-av": "^16.0.7",
+    "expo-calendar": "^15.0.7",
     "expo-contacts": "~15.0.8",
     "expo-document-picker": "^14.0.7",
     "expo-media-library": "^18.2.0",
