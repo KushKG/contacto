@@ -13,6 +13,7 @@ import {
   Animated,
 } from 'react-native';
 import { Audio } from 'expo-av';
+import { MaterialIcons } from '@expo/vector-icons';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
 import { Contact, Conversation } from '@contacto/shared';
@@ -42,7 +43,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
   const { contactId } = route.params;
   const [contact, setContact] = useState<Contact | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [showAddTagModal, setShowAddTagModal] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [allConversationTags, setAllConversationTags] = useState<string[]>([]);
@@ -55,9 +56,26 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingAnimation] = useState(new Animated.Value(1));
   const [visualizerAnimation] = useState(new Animated.Value(0));
+  const [processingMessage, setProcessingMessage] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
 
   const contactService = getContactService();
   const conversationService = getConversationService();
+  const normalizeTag = (raw: string): string => {
+    if (!raw) return '';
+    let t = String(raw).trim();
+    t = t.replace(/^professional\s*interests\s*:\s*/i, '')
+         .replace(/^industry\s*\/\s*company\s*:\s*/i, '')
+         .replace(/^industry\s*:\s*/i, '')
+         .replace(/^company\s*:\s*/i, '')
+         .replace(/^topic\s*:\s*/i, '')
+         .replace(/^interest\s*:\s*/i, '')
+         .replace(/^category\s*:\s*/i, '')
+         .replace(/^tags?\s*:\s*/i, '');
+    t = t.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
+    t = t.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return t;
+  };
 
   const loadContact = useCallback(async () => {
     try {
@@ -68,17 +86,17 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
       const conversationsData = await conversationService.getConversationsByContact(contactId);
       setConversations(conversationsData);
       
-      // Extract all unique tags from conversations and contact
+      // Extract all unique tags from conversations and contact (normalized)
       const allTags = new Set<string>();
       
       // Add contact tags
       if (contactData?.tags) {
-        contactData.tags.forEach(tag => allTags.add(tag));
+        contactData.tags.forEach(tag => allTags.add(normalizeTag(tag)));
       }
       
       // Add conversation tags
       conversationsData.forEach(conversation => {
-        conversation.tags.forEach(tag => allTags.add(tag));
+        conversation.tags.forEach(tag => allTags.add(normalizeTag(tag)));
       });
       
       setAllConversationTags(Array.from(allTags));
@@ -86,7 +104,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
       Alert.alert('Error', 'Failed to load contact details');
       console.error('Error loading contact:', error);
     } finally {
-      setIsLoading(false);
+      setIsInitialLoading(false);
     }
   }, [contactService, conversationService, contactId]);
 
@@ -124,18 +142,25 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
 
   const handlePlayConversation = async (conversation: Conversation) => {
     try {
-      // Stop current playback if any
-      if (sound) {
-        await sound.unloadAsync();
-        setSound(null);
+      // If current item is active, toggle pause/resume
+      if (playingConversationId === conversation.id && sound) {
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded) {
+          if (status.isPlaying) {
+            await sound.pauseAsync();
+            setIsPaused(true);
+          } else {
+            await sound.playAsync();
+            setIsPaused(false);
+          }
+          return;
+        }
       }
 
-      if (playingConversationId === conversation.id) {
-        // If already playing this conversation, stop it
-        setPlayingConversationId(null);
-        setPlaybackPosition(0);
-        setPlaybackDuration(0);
-        return;
+      // If switching to a new item, unload previous sound
+      if (sound) {
+        try { await sound.unloadAsync(); } catch {}
+        setSound(null);
       }
 
       // Load and play new audio
@@ -146,10 +171,10 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
           if (status.isLoaded) {
             setPlaybackPosition(status.positionMillis || 0);
             setPlaybackDuration(status.durationMillis || 0);
-            
             if (status.didJustFinish) {
               setPlayingConversationId(null);
               setPlaybackPosition(0);
+              setIsPaused(false);
             }
           }
         }
@@ -157,6 +182,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
 
       setSound(newSound);
       setPlayingConversationId(conversation.id);
+      setIsPaused(false);
     } catch (error) {
       console.error('Error playing conversation:', error);
       Alert.alert('Error', 'Failed to play conversation audio');
@@ -237,12 +263,13 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
         const audioRecording = await conversationService.stopRecording();
         setRecordingDuration(0);
         
-        // Process the conversation
-        setIsLoading(true);
+        // Process the conversation (non-blocking, inline status)
+        setProcessingMessage('Processing conversation (transcribing, summarizing, tagging)...');
         const newConversation = await conversationService.processConversation(contactId, audioRecording);
         
         // Reload conversations and tags
         await loadContact();
+        setProcessingMessage(null);
         
         Alert.alert('Success', 'Conversation recorded and processed successfully!');
       } else {
@@ -265,31 +292,33 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
       setIsRecording(false);
       stopRecordingAnimation();
       setRecordingDuration(0);
+      setProcessingMessage(null);
       Alert.alert('Error', 'Failed to record conversation');
     }
   };
 
   const handleAddTag = async () => {
     if (!newTag.trim()) return;
+    const normalized = normalizeTag(newTag.trim());
     
     try {
       // Add the tag to the contact itself
-      const updatedTags = [...(contact?.tags || []), newTag.trim()];
+      const updatedTags = [...(contact?.tags || []).map(normalizeTag), normalized];
       const updatedContact = await contactService.updateContact(contactId, {
         tags: updatedTags,
       });
       
       if (updatedContact) {
-        setContact(updatedContact);
+        // keep state tags normalized
+        setContact({ ...updatedContact, tags: (updatedContact.tags || []).map(normalizeTag) } as Contact);
         // Also update the conversation tags list to include this new tag
-        setAllConversationTags(prev => [...prev, newTag.trim()]);
+        setAllConversationTags(prev => [...prev, normalized]);
         
         // Update hybrid search service separately (with error handling)
         try {
           const hybridSearchService = getHybridSearchService();
           await hybridSearchService.updateContact(contactId, { tags: updatedTags });
         } catch (searchError) {
-          console.warn('Failed to update search index, but tag was added:', searchError);
           // Don't show error to user - tag was successfully added
         }
       }
@@ -305,32 +334,33 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
   const handleDeleteTag = async (tagToDelete: string) => {
     try {
       // Remove the tag from the contact itself
-      const updatedContactTags = (contact?.tags || []).filter(tag => tag !== tagToDelete);
+      const toRemove = normalizeTag(tagToDelete);
+      const updatedContactTags = (contact?.tags || []).filter(tag => normalizeTag(tag) !== toRemove).map(normalizeTag);
       const updatedContact = await contactService.updateContact(contactId, {
         tags: updatedContactTags,
       });
       
       if (updatedContact) {
-        setContact(updatedContact);
+        setContact({ ...updatedContact, tags: (updatedContact.tags || []).map(normalizeTag) } as Contact);
         
         // Update hybrid search service separately (with error handling)
         try {
           const hybridSearchService = getHybridSearchService();
           await hybridSearchService.updateContact(contactId, { tags: updatedContactTags });
         } catch (searchError) {
-          console.warn('Failed to update search index, but tag was deleted:', searchError);
           // Don't show error to user - tag was successfully deleted
         }
       }
       
       // Also remove from conversation tags list
-      setAllConversationTags(prev => prev.filter(tag => tag !== tagToDelete));
+      setAllConversationTags(prev => prev.filter(tag => normalizeTag(tag) !== toRemove));
       
       // Remove the tag from all conversations for this contact
       const updatedConversations = await Promise.all(
         conversations.map(async (conversation) => {
-          if (conversation.tags.includes(tagToDelete)) {
-            const updatedTags = conversation.tags.filter(tag => tag !== tagToDelete);
+          const convTagsNorm = conversation.tags.map(normalizeTag);
+          if (convTagsNorm.includes(toRemove)) {
+            const updatedTags = conversation.tags.filter(tag => normalizeTag(tag) !== toRemove).map(normalizeTag);
             return await conversationService.updateConversation(conversation.id, {
               tags: updatedTags,
             });
@@ -370,7 +400,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
     };
   }, [sound]);
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
@@ -487,6 +517,12 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
 
         {/* Voice Memo Recorder */}
         <View style={styles.voiceMemoContainer}>
+          {processingMessage && (
+            <View style={styles.inlineProcessing}>
+              <ActivityIndicator size="small" color="#007AFF" />
+              <Text style={styles.inlineProcessingText}>{processingMessage}</Text>
+            </View>
+          )}
           <View style={styles.voiceMemoHeader}>
             <Text style={styles.voiceMemoTitle}>Record Conversation</Text>
             <Animated.View style={{ opacity: isRecording ? 1 : 0 }}>
@@ -594,17 +630,14 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
             <Text style={styles.conversationTimestamp}>
               {formatTimestamp(item.createdAt)}
             </Text>
-            {item.duration && (
-              <Text style={styles.conversationDuration}>
-                {formatTime(item.duration * 1000)}
-              </Text>
-            )}
+            {/* Duration removed in list view */}
           </View>
           <TouchableOpacity
             style={styles.deleteConversationButton}
             onPress={() => handleDeleteConversation(item.id)}
+            accessibilityLabel="Delete conversation"
           >
-            <Text style={styles.deleteConversationText}>×</Text>
+            <MaterialIcons name="delete-outline" size={20} color="#ff3b30" />
           </TouchableOpacity>
         </View>
         
@@ -612,35 +645,7 @@ export default function ContactDetailScreen({ navigation, route }: Props) {
           {item.summary}
         </Text>
         
-        {/* Playback Controls */}
-        {item.audioFilePath && (
-          <View style={styles.playbackContainer}>
-              <TouchableOpacity
-                style={styles.playButton}
-                onPress={() => handlePlayConversation(item)}
-              >
-                <Text style={styles.playButtonText}>
-                  {isPlaying ? '⏸' : '▶'}
-                </Text>
-              </TouchableOpacity>
-            
-            {isPlaying && (
-              <View style={styles.playbackBar}>
-                <View style={styles.playbackProgress}>
-                  <View 
-                    style={[
-                      styles.playbackFill, 
-                      { width: `${progress * 100}%` }
-                    ]} 
-                  />
-                </View>
-                <Text style={styles.playbackTime}>
-                  {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
+        {/* Playback moved to Conversation Detail screen */}
         
         {item.tags.length > 0 && (
           <View style={styles.conversationTags}>
@@ -735,6 +740,20 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
+    color: '#666',
+  },
+  inlineProcessing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f2f2f7',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  inlineProcessingText: {
+    marginLeft: 8,
+    fontSize: 14,
     color: '#666',
   },
   errorContainer: {

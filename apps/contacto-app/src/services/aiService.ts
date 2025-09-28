@@ -37,7 +37,6 @@ export class AIService {
   
       // Ensure proper prefix
       const normalizedUri = fileUri.startsWith("file://") ? fileUri : `file://${fileUri}`;
-      console.log("Uploading file with XHR:", normalizedUri);
   
       // Upload to our backend proxy instead of OpenAI directly
       const formData = new FormData();
@@ -47,7 +46,6 @@ export class AIService {
         name: "recording.wav",
       } as any);
 
-      console.log("Uploading to backend proxy...");
       
       // Replace localhost with your machine's IP if testing on device
       const backendUrl = "http://localhost:3001/transcribe";
@@ -57,7 +55,6 @@ export class AIService {
         body: formData,
       });
 
-      console.log("Backend response status:", response.status);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -66,7 +63,6 @@ export class AIService {
       
       const result = await response.json();
   
-      console.log("Transcription response:", result);
   
       return {
         text: result.text,
@@ -140,17 +136,27 @@ Please respond in JSON format:
     try {
       const openai = await this.ensureOpenAI();
       
-      const prompt = `Analyze this conversation and extract relevant tags for ${contactName}. 
-      Focus on:
-      - Professional interests/skills
-      - Personal interests/hobbies
-      - Industry/company mentions
-      - Location references
-      - Relationship context (colleague, friend, client, etc.)
+      const prompt = `Analyze this conversation and extract relevant tags for ${contactName}.
+Focus on:
+- Professional interests/skills
+- Personal interests/hobbies
+- Industry/company mentions
+- Location references
+- Relationship context (colleague, friend, client, etc.)
 
-      Conversation: "${transcription}"
+Conversation: "${transcription}"
 
-      Return only a JSON array of tags (max 10): ["tag1", "tag2", "tag3"]`;
+Formatting rules for tags:
+- Return ONLY a JSON array of strings (max 10)
+- Each tag must be a concise noun phrase in Title Case
+- Do NOT include any category prefixes (e.g., remove "Professional Interests:", "Industry/Company:")
+- Do NOT include colons, commas, or additional descriptors
+- Examples:
+  - "professional interests: software engineering" -> "Software Engineering"
+  - "Industry/company: Meta" -> "Meta"
+  - "location: austin, tx" -> "Austin"
+
+Output example (JSON only): ["Software Engineering", "Meta", "Austin"]`;
 
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',

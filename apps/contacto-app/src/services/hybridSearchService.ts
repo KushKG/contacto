@@ -293,7 +293,6 @@ export class HybridSearchService {
       const qEmbed = await this.aiService.generateEmbeddingCached(query);
       return await this.vectorStore.search(qEmbed, this.config.maxResults);
     } catch (error) {
-      console.warn('Semantic search failed:', error);
       return [];
     }
   }
@@ -302,7 +301,6 @@ export class HybridSearchService {
     try {
       return await this.keywordSearchService.search(query, this.config.maxResults);
     } catch (error) {
-      console.warn('Keyword search failed:', error);
       return [];
     }
   }
@@ -311,13 +309,11 @@ export class HybridSearchService {
     try {
       await this.keywordSearchService.updateContact(contactId, updates);
     } catch (error) {
-      console.warn('Failed to update keyword search index:', error);
     }
     if (updates.tags !== undefined) {
       try {
         await this.rebuildTagIndex();
       } catch (error) {
-        console.warn('Failed to update vector store:', error);
       }
     }
   }

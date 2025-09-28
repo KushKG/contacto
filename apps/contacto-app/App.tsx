@@ -138,6 +138,7 @@ export default function App() {
         <Stack.Navigator
           initialRouteName="MainTabs"
           screenOptions={{
+            headerShown: false,
             headerStyle: {
               backgroundColor: '#007AFF',
             },
@@ -155,32 +156,50 @@ export default function App() {
           <Stack.Screen 
             name="ContactDetail" 
             component={ContactDetailScreen}
-            options={{ title: 'Contact Details' }}
+            options={{ 
+              headerShown: true,
+              title: 'Contact Details' 
+            }}
           />
           <Stack.Screen 
             name="EditContact" 
             component={EditContactScreen}
-            options={{ title: 'Edit Contact' }}
+            options={{ 
+              headerShown: true,
+              title: 'Edit Contact' 
+            }}
           />
           <Stack.Screen 
             name="RecordConversation" 
             component={RecordConversationScreen}
-            options={{ title: 'Record Conversation' }}
+            options={{ 
+              headerShown: true,
+              title: 'Record Conversation' 
+            }}
           />
           <Stack.Screen 
             name="ConversationDetail" 
             component={ConversationDetailScreen}
-            options={{ title: 'Conversation Details' }}
+            options={{ 
+              headerShown: true,
+              title: 'Conversation Details' 
+            }}
           />
           <Stack.Screen 
             name="SemanticSearch" 
             component={SemanticSearchScreen}
-            options={{ title: 'Semantic Search' }}
+            options={{ 
+              headerShown: true,
+              title: 'Semantic Search' 
+            }}
           />
           <Stack.Screen 
             name="DebugDB" 
             component={DebugDBScreen}
-            options={{ title: 'Debug DB' }}
+            options={{ 
+              headerShown: true,
+              title: 'Debug DB' 
+            }}
           />
         </Stack.Navigator>
       </NavigationContainer>

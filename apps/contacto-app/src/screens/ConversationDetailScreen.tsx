@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import { RouteProp } from '@react-navigation/native';
 import { Conversation, Contact } from '@contacto/shared';
 import { getConversationService } from '../services/conversationService';
 import { getContactService } from '../services/contactService';
+import { Audio } from 'expo-av';
+import { MaterialIcons } from '@expo/vector-icons';
 
 type RootStackParamList = {
   ContactsList: undefined;
@@ -37,6 +39,10 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
   const [contact, setContact] = useState<Contact | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [positionMs, setPositionMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   const conversationService = getConversationService();
   const contactService = getContactService();
@@ -52,6 +58,9 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
         setConversation(conversationData);
         const contactData = await contactService.getContact(conversationData.contactId);
         setContact(contactData);
+        if (conversationData.duration) {
+          setDurationMs(conversationData.duration * 1000);
+        }
       } else {
         Alert.alert('Error', 'Conversation not found');
         navigation.goBack();
@@ -65,22 +74,64 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
     }
   };
 
-  const handlePlayAudio = async () => {
-    if (!conversation?.audioFilePath) {
-      Alert.alert('Error', 'No audio file available');
-      return;
-    }
+  const ensureSoundLoaded = async () => {
+    if (soundRef.current) return soundRef.current;
+    if (!conversation?.audioFilePath) throw new Error('No audio');
+    const { sound } = await Audio.Sound.createAsync(
+      { uri: conversation.audioFilePath },
+      { shouldPlay: false },
+      (status) => {
+        if (!status.isLoaded) return;
+        setPositionMs(status.positionMillis || 0);
+        setDurationMs(status.durationMillis || 0);
+        if (status.didJustFinish) {
+          setIsPlaying(false);
+          setIsPaused(false);
+          setPositionMs(0);
+        }
+      }
+    );
+    soundRef.current = sound;
+    return sound;
+  };
 
+  const handleTogglePlayPause = async () => {
     try {
-      setIsPlaying(true);
-      await conversationService.playConversationAudio(conversationId);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to play audio');
-      console.error('Error playing audio:', error);
-    } finally {
-      setIsPlaying(false);
+      const sound = await ensureSoundLoaded();
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded) {
+        if (status.isPlaying) {
+          await sound.pauseAsync();
+          setIsPaused(true);
+          setIsPlaying(false);
+        } else {
+          await sound.playAsync();
+          setIsPaused(false);
+          setIsPlaying(true);
+        }
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to control audio');
     }
   };
+
+  const handleSeek = async (ratio: number) => {
+    try {
+      const sound = await ensureSoundLoaded();
+      const newPos = Math.max(0, Math.min(1, ratio)) * (durationMs || 0);
+      await sound.setPositionAsync(newPos);
+      setPositionMs(newPos);
+    } catch {}
+  };
+
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+    };
+  }, []);
 
   const handleDeleteConversation = () => {
     Alert.alert(
@@ -107,7 +158,7 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
   };
 
   const formatDuration = (seconds?: number): string => {
-    if (!seconds) return 'Unknown';
+    if (seconds === undefined || Number.isNaN(seconds)) return 'Unknown';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -141,7 +192,7 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
@@ -152,23 +203,6 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
           <Text style={styles.contactName}>{contact.name}</Text>
           <Text style={styles.date}>{formatDate(conversation.createdAt)}</Text>
         </View>
-
-        {conversation.audioFilePath && (
-          <View style={styles.audioSection}>
-            <TouchableOpacity
-              style={[styles.playButton, isPlaying && styles.playButtonActive]}
-              onPress={handlePlayAudio}
-              disabled={isPlaying}
-            >
-              <Text style={styles.playButtonText}>
-                {isPlaying ? 'Playing...' : '▶ Play Audio'}
-              </Text>
-            </TouchableOpacity>
-            <Text style={styles.duration}>
-              Duration: {formatDuration(conversation.duration)}
-            </Text>
-          </View>
-        )}
 
         <View style={styles.summarySection}>
           <Text style={styles.sectionTitle}>Summary</Text>
@@ -190,7 +224,25 @@ export default function ConversationDetailScreen({ navigation, route }: Props) {
 
         <View style={styles.transcriptionSection}>
           <Text style={styles.sectionTitle}>Full Transcription</Text>
-          <Text style={styles.transcriptionText}>{conversation.transcription}</Text>
+          <Text style={styles.transcriptionText} selectable>{conversation.transcription}</Text>
+          {conversation.audioFilePath && (
+            <View style={{ marginTop: 12 }}>
+              <View style={styles.playerRow}>
+                <TouchableOpacity onPress={handleTogglePlayPause} style={styles.iconButton}>
+                  <MaterialIcons name={isPlaying ? 'pause' : 'play-arrow'} size={28} color="#007AFF" />
+                </TouchableOpacity>
+                <View style={styles.progressContainer}>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${durationMs ? (positionMs / durationMs) * 100 : 0}%` }]} />
+                  </View>
+                  <View style={styles.timeRow}>
+                    <Text style={styles.timeText}>{formatDuration(positionMs / 1000)}</Text>
+                    <Text style={styles.timeText}>{formatDuration((durationMs || (conversation.duration || 0) * 1000) / 1000)}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
 
         <View style={styles.actions}>
@@ -210,6 +262,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  scrollContent: {
+    paddingBottom: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -283,24 +338,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  playButton: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+  playerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  progressContainer: {
+    flex: 1,
+  },
+  progressContainerInline: {
+    marginTop: 8,
     marginBottom: 8,
   },
-  playButtonActive: {
-    backgroundColor: '#0056b3',
+  progressTrack: {
+    height: 4,
+    backgroundColor: '#e5e5ea',
+    borderRadius: 2,
+    overflow: 'hidden',
   },
-  playButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#007AFF',
+    borderRadius: 2,
+    width: '0%',
   },
-  duration: {
-    fontSize: 14,
-    color: '#666',
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  timeText: {
+    fontSize: 12,
+    color: '#8e8e93',
+  },
+  timeTextSmall: {
+    fontSize: 12,
+    color: '#8e8e93',
+    marginLeft: 6,
+  },
+  seekOverlay: {
+    position: 'absolute',
+    left: 76,
+    right: 20,
+    top: 20,
+    bottom: 40,
+  },
+  transcriptionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inlinePlayer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   summarySection: {
     backgroundColor: '#fff',
@@ -351,6 +449,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
+    flexShrink: 0,
+    flexWrap: 'wrap',
   },
   actions: {
     marginBottom: 20,

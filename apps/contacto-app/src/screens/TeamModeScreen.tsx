@@ -165,7 +165,7 @@ export default function TeamModeScreen({ navigation }: Props) {
         <Text style={styles.sectionTitle}>Data Management</Text>
         
         <TouchableOpacity style={styles.settingItem} onPress={handleExportDatabase}>
-          <MaterialIcons name="file-download" size={24} color="#666" />
+          <MaterialIcons name="file-upload" size={24} color="#666" />
           <View style={styles.settingContent}>
             <Text style={styles.settingTitle}>Export Data</Text>
             <Text style={styles.settingSubtitle}>Share your contacts and conversations</Text>
@@ -174,7 +174,7 @@ export default function TeamModeScreen({ navigation }: Props) {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.settingItem} onPress={handleImportDatabase}>
-          <MaterialIcons name="file-upload" size={24} color="#666" />
+          <MaterialIcons name="file-download" size={24} color="#666" />
           <View style={styles.settingContent}>
             <Text style={styles.settingTitle}>Import Data</Text>
             <Text style={styles.settingSubtitle}>Import contacts from another device</Text>

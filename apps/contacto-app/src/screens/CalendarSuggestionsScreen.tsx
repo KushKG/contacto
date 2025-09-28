@@ -23,7 +23,7 @@ export default function CalendarSuggestionsScreen({ navigation }: any) {
   const [expandedEventKeys, setExpandedEventKeys] = useState<Set<string>>(new Set());
 
   const { width } = Dimensions.get('window');
-  const cellWidth = (width - 40) / 7; // 7 days, with 20px total padding
+  const cellWidth = Math.floor((width - 40) / 7); // Ensure integer width for proper alignment
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -211,37 +211,43 @@ export default function CalendarSuggestionsScreen({ navigation }: any) {
 
         {/* Calendar Grid */}
         <View style={styles.calendarGrid}>
-          {calendarData.map((day, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.dayCell,
-                { width: cellWidth },
-                day.isToday && styles.todayCell,
-                day.isSelected && styles.selectedCell,
-                !day.isCurrentMonth && styles.otherMonthCell
-              ]}
-              onPress={() => setSelectedDate(day.date)}
-            >
-              <Text style={[
-                styles.dayText,
-                day.isToday && styles.todayText,
-                day.isSelected && styles.selectedText,
-                !day.isCurrentMonth && styles.otherMonthText
-              ]}>
-                {day.date.getDate()}
-              </Text>
-              {day.events.length > 0 && (
-                <View style={styles.eventDots}>
-                  {day.events.slice(0, 3).map((_, eventIndex) => (
-                    <View key={eventIndex} style={styles.eventDot} />
-                  ))}
-                  {day.events.length > 3 && (
-                    <Text style={styles.moreEvents}>+{day.events.length - 3}</Text>
-                  )}
-                </View>
-              )}
-            </TouchableOpacity>
+          {Array.from({ length: 6 }, (_, weekIndex) => (
+            <View key={weekIndex} style={styles.calendarWeek}>
+              {Array.from({ length: 7 }, (_, dayIndex) => {
+                const day = calendarData[weekIndex * 7 + dayIndex];
+                return (
+                  <TouchableOpacity
+                    key={dayIndex}
+                    style={[
+                      styles.dayCell,
+                      day.isToday && styles.todayCell,
+                      day.isSelected && styles.selectedCell,
+                      !day.isCurrentMonth && styles.otherMonthCell
+                    ]}
+                    onPress={() => setSelectedDate(day.date)}
+                  >
+                    <Text style={[
+                      styles.dayText,
+                      day.isToday && styles.todayText,
+                      day.isSelected && styles.selectedText,
+                      !day.isCurrentMonth && styles.otherMonthText
+                    ]}>
+                      {day.date.getDate()}
+                    </Text>
+                    {day.events.length > 0 && (
+                      <View style={styles.eventDots}>
+                        {day.events.slice(0, 3).map((_, eventIndex) => (
+                          <View key={eventIndex} style={styles.eventDot} />
+                        ))}
+                        {day.events.length > 3 && (
+                          <Text style={styles.moreEvents}>+{day.events.length - 3}</Text>
+                        )}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           ))}
         </View>
 
@@ -402,18 +408,20 @@ const styles = StyleSheet.create({
     color: '#8e8e93',
   },
   calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     backgroundColor: '#fff',
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
+  calendarWeek: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#f2f2f7',
+  },
   dayCell: {
+    flex: 1,
     height: 46,
     justifyContent: 'center',
     alignItems: 'center',
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#f2f2f7',
     borderRightWidth: 0.5,
     borderRightColor: '#f2f2f7',
   },

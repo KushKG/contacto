@@ -77,28 +77,34 @@ export default function ConnectionSuggestionsScreen({ navigation }: Props) {
   const handleIntroduceContacts = useCallback((suggestion: ConnectionSuggestion) => {
     const { contact1, contact2, commonTags } = suggestion;
 
-    const sanitizePhone = (value?: string) =>
-      (value || '').replace(/[^\d+]/g, '');
+    const sanitizePhone = (value?: string) => {
+      const s = (value || '').replace(/[^\d+]/g, '');
+      return s.length > 0 ? s : undefined;
+    };
 
-    // Prefer introducing to contact2 by default; fall back to contact1
-    const recipient = sanitizePhone(contact2.phone) || sanitizePhone(contact1.phone);
+    const phone1 = sanitizePhone(contact1.phone);
+    const phone2 = sanitizePhone(contact2.phone);
+    const recipients = [phone1, phone2].filter(Boolean) as string[];
 
-    const reason = commonTags && commonTags.length ? commonTags.slice(0, 3).join(', ') : 'shared interests';
-    const simpleMessage = `Hey ${contact2.name}, I’d like to intro you to ${contact1.name} — you both have ${reason}. ${contact1.name}: ${[contact1.email, contact1.phone].filter(Boolean).join(' / ')}`;
-    const body = encodeURIComponent(simpleMessage);
-
-    const url = Platform.select({
-      ios: recipient ? `sms:${recipient}&body=${body}` : `sms:&body=${body}`,
-      android: recipient ? `smsto:${recipient}?body=${body}` : `sms:?body=${body}`,
-      default: recipient ? `sms:${recipient}?body=${body}` : `sms:?body=${body}`,
-    });
-
-    if (!url) {
-      Alert.alert('No SMS handler', 'Cannot open Messages on this device.');
+    if (recipients.length === 0) {
+      Alert.alert('No phone numbers', 'Neither contact has a phone number to message.');
       return;
     }
 
-    Linking.openURL(url).catch(() => {
+    const message = `Hey ${contact1.name} and ${contact2.name}, I'd love to introduce you two to each other!`;
+    const body = encodeURIComponent(message);
+
+    // iOS supports multiple recipients via comma-separated list
+    const iosRecipients = recipients.join(',');
+    const first = recipients[0];
+
+    const url = Platform.select({
+      ios: `sms:${iosRecipients}&body=${body}`,
+      android: `smsto:${first}?body=${body}`,
+      default: `sms:${first}?body=${body}`,
+    });
+
+    Linking.openURL(url as string).catch(() => {
       Alert.alert('Unable to open Messages', 'Please try again or use Share instead.');
     });
   }, []);

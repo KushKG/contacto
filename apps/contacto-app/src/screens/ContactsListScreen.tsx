@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -194,7 +194,13 @@ export default function ContactsListScreen({ navigation }: Props) {
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    loadContacts();
+    (async () => {
+      try {
+        // Try auto-sync with device, then reload
+        await contactService.syncDeviceContacts({ deleteMissing: true });
+      } catch {}
+      await loadContacts();
+    })();
   }, [loadContacts]);
 
   const formatContactsForSharing = useCallback((contacts: Contact[]) => {
@@ -323,16 +329,7 @@ export default function ContactsListScreen({ navigation }: Props) {
           </View>
           {/* Phone and email hidden from main list */}
           {item.tags && item.tags.length > 0 && (
-            <View style={styles.tagsPreview}>
-              {item.tags.slice(0, 3).map((tag, index) => (
-                <View key={`${item.id}-tag-${index}`} style={styles.tagPreview}>
-                  <Text style={styles.tagPreviewText}>{tag}</Text>
-                </View>
-              ))}
-              {item.tags.length > 3 && (
-                <Text style={styles.moreTagsText}>+{item.tags.length - 3} more</Text>
-              )}
-            </View>
+            <TagPreviewRow contactId={item.id} tags={item.tags} />
           )}
         </View>
       </TouchableOpacity>
@@ -370,7 +367,7 @@ export default function ContactsListScreen({ navigation }: Props) {
           <View style={styles.searchInputContainer}>
             <TextInput
               style={styles.searchInput}
-              placeholder="Search"
+              placeholder="AI Search"
               placeholderTextColor="#8e8e93"
               value={aiQuery}
               onChangeText={handleAiSearchChange}
@@ -433,10 +430,10 @@ export default function ContactsListScreen({ navigation }: Props) {
                   <Text style={styles.aiResultsSubtitle}>
                     {isAISearching ? 'Searching…' : `Found ${aiResults.length} related to "${aiQuery}"`}
                   </Text>
-                  <Text style={styles.aiResultsDescription}>
+                  {/* <Text style={styles.aiResultsDescription}>
                     Semantic over conversations + tags, plus tag keyword matching
-                  </Text>
-                  {aiDebug.length > 0 && (
+                  </Text> */}
+                  {/* {aiDebug.length > 0 && (
                     <View style={{ marginTop: 8 }}>
                       {aiDebug.map((d, idx) => (
                         <Text key={`dbg-${idx}`} style={{ fontSize: 11, color: '#666' }}>
@@ -444,7 +441,7 @@ export default function ContactsListScreen({ navigation }: Props) {
                         </Text>
                       ))}
                     </View>
-                  )}
+                  )} */}
                 </View>
               ) : null}
               {simpleQuery.trim() ? (
@@ -486,6 +483,75 @@ export default function ContactsListScreen({ navigation }: Props) {
         </View>
       )}
 
+    </View>
+  );
+}
+
+// Renders as many full tag pills as fit on one line; if next would overflow, shows "+X more".
+function TagPreviewRow({ tags, contactId }: { tags: string[]; contactId: string }) {
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [measured, setMeasured] = useState<Record<number, number>>({});
+
+  const visibleInfo = useMemo(() => {
+    if (containerWidth === 0) return { count: 0, remaining: tags.length };
+    // Account for left padding inside row is minimal; we rely on actual measured pill widths including margins
+    let used = 0;
+    let count = 0;
+    const gap = 4; // horizontal gap between pills
+    for (let i = 0; i < tags.length; i++) {
+      const w = measured[i];
+      if (!w) {
+        // If not yet measured, optimistically include and adjust next render
+        return { count, remaining: tags.length - count };
+      }
+      const nextUsed = count === 0 ? w : used + gap + w;
+      if (nextUsed <= containerWidth) {
+        used = nextUsed;
+        count++;
+        continue;
+      }
+      break;
+    }
+    return { count, remaining: Math.max(0, tags.length - count) };
+  }, [containerWidth, measured, tags]);
+
+  const handleLayoutContainer = useCallback((e) => {
+    const w = e.nativeEvent.layout.width;
+    if (w !== containerWidth) setContainerWidth(w);
+  }, [containerWidth]);
+
+  const handleLayoutTag = useCallback((index: number, e: any) => {
+    const w = e.nativeEvent.layout.width;
+    setMeasured(prev => (prev[index] === w ? prev : { ...prev, [index]: w }));
+  }, []);
+
+  const showCount = visibleInfo.count;
+  const remaining = visibleInfo.remaining;
+
+  return (
+    <View style={styles.tagsPreview} onLayout={handleLayoutContainer}>
+      {tags.slice(0, showCount).map((tag, index) => (
+        <View
+          key={`${contactId}-tag-${index}`}
+          style={styles.tagPreview}
+          onLayout={(e) => handleLayoutTag(index, e)}
+        >
+          <Text style={styles.tagPreviewText}>{tag}</Text>
+        </View>
+      ))}
+      {remaining > 0 && (
+        <Text style={styles.moreTagsText}>+{remaining} more</Text>
+      )}
+      {/* Hidden measurers for tags not yet measured to get widths */}
+      {containerWidth > 0 && Object.keys(measured).length < tags.length && (
+        <View style={{ position: 'absolute', left: -9999, top: -9999 }}>
+          {tags.map((tag, idx) => (
+            <View key={`m-${contactId}-${idx}`} style={styles.tagPreview} onLayout={(e) => handleLayoutTag(idx, e)}>
+              <Text style={styles.tagPreviewText}>{tag}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -670,6 +736,8 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
     marginTop: 4,
     overflow: 'hidden',
+    maxWidth: '100%',
+    alignItems: 'center',
   },
   tagPreview: {
     backgroundColor: '#f2f2f7',

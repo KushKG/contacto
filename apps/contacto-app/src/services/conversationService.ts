@@ -14,6 +14,25 @@ export class ConversationService {
   private db = getDatabase();
   private audioService = getAudioService();
 
+  private normalizeTag(raw: string): string {
+    if (!raw) return '';
+    let t = String(raw).trim();
+    // Remove common prefixes like "professional interests:", "industry/company:", etc.
+    t = t.replace(/^professional\s*interests\s*:\s*/i, '')
+         .replace(/^industry\s*\/\s*company\s*:\s*/i, '')
+         .replace(/^industry\s*:\s*/i, '')
+         .replace(/^company\s*:\s*/i, '')
+         .replace(/^topic\s*:\s*/i, '')
+         .replace(/^interest\s*:\s*/i, '')
+         .replace(/^category\s*:\s*/i, '')
+         .replace(/^tags?\s*:\s*/i, '');
+    // Strip surrounding quotes
+    t = t.replace(/^"|"$/g, '').replace(/^'|'$/g, '').trim();
+    // Title case words
+    t = t.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return t;
+  }
+
   async startRecording(): Promise<void> {
     try {
       await this.audioService.startRecording();
@@ -48,7 +67,8 @@ export class ConversationService {
       // Extract tags
       const contact = await this.db.contacts.getContact(contactId);
       const contactName = contact?.name || 'Unknown Contact';
-      const tags = await aiService.extractContactTags(transcription.text, contactName);
+      const tagsRaw = await aiService.extractContactTags(transcription.text, contactName);
+      const tags = Array.from(new Set(tagsRaw.map(t => this.normalizeTag(t)).filter(Boolean)));
       
       // Create conversation record
       const conversationData: ConversationCreateData = {
@@ -63,7 +83,7 @@ export class ConversationService {
       const conversation = await this.db.conversations.createConversation(conversationData);
 
       // Persist extracted tags onto the contact (union)
-      const existingTags = contact?.tags || [];
+      const existingTags = (contact?.tags || []).map(t => this.normalizeTag(t)).filter(Boolean);
       const tagSet = new Set<string>([...existingTags, ...tags]);
       const mergedTags = Array.from(tagSet);
       const updatedContact = await this.db.contacts.updateContact(contactId, { tags: mergedTags });

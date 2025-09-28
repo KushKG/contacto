@@ -2,6 +2,12 @@
 
 A React Native mobile application that evolves through 3 stages to provide intelligent contact management with AI-powered features.
 
+## Inspiration, Evolution, and Value (Brief)
+
+- **Inspiration / Source**: Inspired by the iOS Contacts experience and modern AI assistants. The idea combines a clean, native-feeling contacts UI with AI capabilities similar to voice memo transcription (Whisper) and semantic organization/search (embeddings), plus suggestions like calendar-based relevance and introductions.
+- **How it was developed**: Built iteratively in three demoable stages within a monorepo. Stage 1 delivered the core contacts app and local SQLite storage. Stage 2 added AI: Whisper transcription, GPT-powered summaries/tags, and hybrid search using embeddings and keyword signals. Stage 3 layers integrations (Calendar), collaboration (export/import demo), sharing, and suggestion features—keeping performance and offline-first behavior via local DB.
+- **Problem solved / Value**: Reduces friction in remembering who to reach out to and why. Conversations become searchable, contacts are auto-tagged, and relevant people surface when planning meetings or drafting introductions. The result is faster recall, smarter discovery, and easier sharing of curated contact sets—without requiring users to manually organize everything.
+
 ## Project Structure
 
 ```

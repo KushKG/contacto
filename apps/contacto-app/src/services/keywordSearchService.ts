@@ -13,7 +13,6 @@ export class KeywordSearchService {
    */
   async initialize(): Promise<void> {
     try {
-      console.log('🔍 Initializing keyword search...');
       
       // Temporarily disable FTS5 due to column structure issues
       // Use simple keyword search instead
@@ -29,11 +28,9 @@ export class KeywordSearchService {
         console.warn('Warning during FTS5 cleanup:', cleanupError);
       }
       
-      console.log('✅ Simple keyword search initialized (FTS5 disabled)');
     } catch (error) {
       console.error('❌ Error initializing keyword search:', error);
       this.fts5Available = false;
-      console.log('🔄 Using fallback keyword search');
     }
   }
 
@@ -188,7 +185,6 @@ export class KeywordSearchService {
   async addContact(contact: KeywordDocument): Promise<void> {
     // FTS5 is disabled, so no action needed
     // Simple search will find contacts directly from the contacts table
-    console.log(`Contact ${contact.name} added (FTS5 disabled, using simple search)`);
   }
 
   /**
@@ -197,7 +193,6 @@ export class KeywordSearchService {
   async updateContact(contactId: string, updates: Partial<KeywordDocument>): Promise<void> {
     // FTS5 is disabled, so no action needed
     // Simple search will find updated contacts directly from the contacts table
-    console.log(`Contact ${contactId} updated (FTS5 disabled, using simple search)`);
   }
 
   /**
@@ -206,7 +201,6 @@ export class KeywordSearchService {
   async removeContact(contactId: string): Promise<void> {
     // FTS5 is disabled, so no action needed
     // Simple search will not find deleted contacts since they're removed from contacts table
-    console.log(`Contact ${contactId} removed (FTS5 disabled, using simple search)`);
   }
 
   /**
@@ -215,7 +209,6 @@ export class KeywordSearchService {
   async rebuildIndex(): Promise<void> {
     // FTS5 is disabled, so no rebuild needed
     // Simple search works directly with the contacts table
-    console.log('✅ Search index ready (FTS5 disabled, using simple search)');
   }
 
   /**
